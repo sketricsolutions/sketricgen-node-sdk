@@ -13,7 +13,7 @@
     }
   },
   "bin": {
-    "sketricgen": "./bin/cli.mjs"
+    "sketricgen": "bin/cli.mjs"
   },
   "engines": {
     "node": ">=18"
