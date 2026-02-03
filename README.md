@@ -79,12 +79,162 @@ for await (const event of stream) {
 }
 ```
 
-## API
+### Streaming events
 
-- **`new SketricGenClient({ apiKey, baseUrl?, uploadInitUrl?, uploadCompleteUrl?, timeout?, uploadTimeout?, maxRetries? })`** — Create a client with options.
-- **`SketricGenClient.fromEnv(overrides?)`** — Create a client from environment variables.
-- **`client.runWorkflow(agentId, userInput, options?)`** — Run a workflow. Returns `Promise<ChatResponse>` by default, or `AsyncGenerator<StreamEvent>` when `options.stream === true`. Options: `conversationId`, `contactId`, `filePaths`, `assets`, `stream`.
-- **`client.files.upload({ agentId, file, filename?, contentType? })`** — Upload a file. `file` can be a path (string), a `Buffer`, or a Node `Readable` stream. Returns an object with `fileId` for use in `assets`.
+When `stream: true`, the client returns an async iterable of **`StreamEvent`**. Each event has:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | string | Type of the SSE event (e.g. `TEXT_MESSAGE_CONTENT`, `RUN_FINISHED`). |
+| `data` | string | JSON string. Parse with `JSON.parse(event.data)` to get the payload; the parsed object may have a `type` field matching `event_type`. |
+| `id` | string (optional) | Optional event ID. |
+
+You must parse `event.data` and handle the events you care about. The following event types can be emitted (aligned with the [SketricGen streaming protocol](https://docs.sketricgen.ai/dev-guide/python-sdk#streaming-events)):
+
+| Event type | Description | Key fields in parsed `data` |
+|------------|-------------|-----------------------------|
+| `RUN_STARTED` | Workflow execution started | `thread_id`, `run_id` |
+| `TEXT_MESSAGE_START` | Assistant message started | `message_id`, `role` |
+| `TEXT_MESSAGE_CONTENT` | Text chunk (incremental) | `message_id`, `delta` |
+| `TEXT_MESSAGE_END` | Assistant message completed | `message_id` |
+| `TOOL_CALL_START` | Tool/function call started | `tool_call_id`, `tool_call_name` |
+| `TOOL_CALL_END` | Tool/function call completed | `tool_call_id` |
+| `RUN_FINISHED` | Workflow completed | `thread_id`, `run_id` |
+| `RUN_ERROR` | Workflow error | `message` |
+| `CUSTOM` | Custom event | varies |
+
+**For integrators and AI agents:** Always handle `RUN_ERROR` (check `data.message`). Use `RUN_FINISHED` to detect successful completion. Use `delta` from `TEXT_MESSAGE_CONTENT` for incremental output. Optionally handle `TOOL_CALL_START` / `TOOL_CALL_END` to show tool usage (e.g. "Calling: ...").
+
+**Complete example** (handling text, tool calls, completion, and errors):
+
+```ts
+const stream = client.runWorkflow('agent-123', 'Search and summarize', { stream: true });
+
+for await (const event of stream) {
+  const data = JSON.parse(event.data);
+  const eventType = event.event_type ?? data?.type;
+
+  switch (eventType) {
+    case 'RUN_STARTED':
+      console.error('Started run:', data.run_id);
+      break;
+    case 'TEXT_MESSAGE_CONTENT':
+      if (data.delta) process.stdout.write(data.delta);
+      break;
+    case 'TOOL_CALL_START':
+      console.error('\n[Calling:', data.tool_call_name + ']');
+      break;
+    case 'TOOL_CALL_END':
+      console.error('[Done]');
+      break;
+    case 'RUN_FINISHED':
+      console.error('\nCompleted.');
+      break;
+    case 'RUN_ERROR':
+      console.error('Error:', data.message);
+      break;
+  }
+}
+```
+
+Event protocol and details: [Streaming events (Python SDK)](https://docs.sketricgen.ai/dev-guide/python-sdk#streaming-events).
+
+## API Reference
+
+For a quick reference from the terminal, run `npx sketricgen --help` or `npx sketricgen --help <method>` (e.g. `npx sketricgen --help runWorkflow`).
+
+### SketricGenClient (constructor)
+
+```ts
+new SketricGenClient(options)
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `apiKey` | string | **Required.** Your API key. |
+| `baseUrl` | string | Optional. Default: `https://chat-v2.sketricgen.ai` |
+| `uploadInitUrl` | string | Optional. Upload init endpoint (not derived from baseUrl). |
+| `uploadCompleteUrl` | string | Optional. Upload complete endpoint. |
+| `timeout` | number | Optional. Request timeout in seconds. |
+| `uploadTimeout` | number | Optional. Upload timeout in seconds. |
+| `maxRetries` | number | Optional. Max retry attempts. |
+
+```ts
+const client = new SketricGenClient({ apiKey: 'your-api-key' });
+```
+
+### SketricGenClient.fromEnv(overrides?)
+
+Create a client from environment variables. Pass an optional `overrides` object to override any option.
+
+| Variable | Purpose |
+|----------|---------|
+| `SKETRICGEN_API_KEY` | API key (required unless in overrides) |
+| `SKETRICGEN_TIMEOUT` | Request timeout in seconds |
+| `SKETRICGEN_UPLOAD_TIMEOUT` | Upload timeout in seconds |
+| `SKETRICGEN_MAX_RETRIES` | Max retries |
+
+```ts
+const client = SketricGenClient.fromEnv();
+const clientWithOverrides = SketricGenClient.fromEnv({ apiKey: 'override-key' });
+```
+
+### client.runWorkflow(agentId, userInput, options?)
+
+Execute a workflow. Returns **`Promise<ChatResponse>`** by default, or **`AsyncGenerator<StreamEvent>`** when `options.stream === true`.
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `conversationId` | string | Optional. Resume an existing conversation. |
+| `contactId` | string | Optional. External contact ID (max 255 chars). |
+| `filePaths` | string[] | Optional. Local file paths; client uploads then attaches as assets. |
+| `assets` | string[] | Optional. Pre-obtained file IDs (e.g. from `files.upload`). |
+| `stream` | boolean | Optional. If `true`, returns async iterable of `StreamEvent`. |
+
+**Non-streaming example:**
+
+```ts
+const response = await client.runWorkflow('agent-123', 'Hello!');
+console.log(response.response);
+```
+
+**Streaming example:** use `for await` and handle `TEXT_MESSAGE_CONTENT` events; parse `event.data` as JSON and use the `delta` field for incremental text. For all stream event types and a full handling example, see [Streaming events](#streaming-events) below.
+
+```ts
+const stream = client.runWorkflow('agent-123', 'Explain step by step.', { stream: true });
+for await (const event of stream) {
+  if (event.event_type === 'TEXT_MESSAGE_CONTENT') {
+    const payload = JSON.parse(event.data);
+    if (payload.delta) process.stdout.write(payload.delta);
+  }
+}
+```
+
+**With files:** use `filePaths` or upload first and pass `assets`.
+
+```ts
+const response = await client.runWorkflow('agent-123', 'Summarize this.', { filePaths: ['./doc.pdf'] });
+```
+
+### client.files.upload({ agentId, file, filename?, contentType? })
+
+Upload a file. Returns a promise that resolves to an object with **`fileId`** (and other fields) for use in `runWorkflow(..., { assets: [result.fileId] })`.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `agentId` | string | **Required.** The agent ID. |
+| `file` | string \| Buffer \| Readable | **Required.** Path, Buffer, or Node `Readable` stream. |
+| `filename` | string | Optional. Required when `file` is Buffer or Readable; must include extension. |
+| `contentType` | string | Optional. Use when `file` is Buffer/Readable and type cannot be inferred. |
+
+**Allowed content types:** `image/jpeg`, `image/webp`, `image/png`, `application/pdf`, `image/gif`. **Max size:** 20 MB. Empty files are rejected.
+
+```ts
+const result = await client.files.upload({ agentId: 'agent-123', file: './document.pdf' });
+// use result.fileId in runWorkflow(..., { assets: [result.fileId] })
+```
+
+When `file` is a `Buffer` or `Readable` stream, you must provide `filename` (with extension); optionally set `contentType`.
 
 ## License
 

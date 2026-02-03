@@ -12,17 +12,22 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "bin": {
+    "sketricgen": "./bin/cli.mjs"
+  },
   "engines": {
     "node": ">=18"
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "bin"
   ],
   "scripts": {
     "build": "tsc",
     "lint": "eslint src --ext .ts",
-    "test": "node --test test/ 2>/dev/null || echo 'No tests yet'"
+    "test": "node --test test/ 2>/dev/null || echo 'No tests yet'",
+    "help": "node bin/cli.mjs --help"
   },
   "keywords": [
     "sketricgen",

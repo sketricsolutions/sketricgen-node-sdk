@@ -34,6 +34,8 @@ The client reads `SKETRICGEN_API_KEY` (and optionally `SKETRICGEN_TIMEOUT`, `SKE
 
 ### 3. Run a test script in the SDK repo
 
+To see usage for each method from the CLI, run `npx sketricgen --help` or `npx sketricgen --help runWorkflow` (and similarly for `files.upload`, `fromEnv`, `SketricGenClient`).
+
 The package is **ESM**. Use a `.mjs` file or run with `node --input-type=module` (or put the script in a project with `"type": "module"`).
 
 **Example 1: Run an existing workflow (message only)**
@@ -145,6 +147,8 @@ SKETRICGEN_API_KEY=your-api-key
 ```
 
 ### 3. Test script in the other app
+
+To see method usage from the CLI in this app, run `npx sketricgen --help` or `npx sketricgen --help runWorkflow`.
 
 Create `test.mjs` (or `test.js` if `"type": "module"` is set):
 

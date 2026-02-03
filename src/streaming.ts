@@ -31,9 +31,18 @@ export async function* parseSSE(
         } else if (line.startsWith('id:')) {
           current.id = line.slice(3).trim();
         } else if (line === '') {
-          if (current.event_type !== undefined && current.data !== undefined) {
+          if (current.data !== undefined) {
+            let event_type = current.event_type;
+            if (event_type === undefined && current.data) {
+              try {
+                const parsed = JSON.parse(current.data) as { type?: string };
+                event_type = parsed?.type ?? 'message';
+              } catch {
+                event_type = 'message';
+              }
+            }
             yield {
-              event_type: current.event_type,
+              event_type: event_type ?? 'message',
               data: current.data,
               id: current.id,
             };
@@ -42,9 +51,18 @@ export async function* parseSSE(
         }
       }
     }
-    if (current.event_type !== undefined && current.data !== undefined) {
+    if (current.data !== undefined) {
+      let event_type = current.event_type;
+      if (event_type === undefined && current.data) {
+        try {
+          const parsed = JSON.parse(current.data) as { type?: string };
+          event_type = parsed?.type ?? 'message';
+        } catch {
+          event_type = 'message';
+        }
+      }
       yield {
-        event_type: current.event_type,
+        event_type: event_type ?? 'message',
         data: current.data,
         id: current.id,
       };
